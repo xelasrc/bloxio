@@ -1,0 +1,58 @@
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: bloxio-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bloxio}
+      POSTGRES_USER: ${POSTGRES_USER:-bloxio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bloxio}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: bloxio-api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://bloxio:bloxio@db:5432/bloxio
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./api:/app
+    ports:
+      - "8000:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  web:
+    build:
+      context: ./web
+    container_name: bloxio-web
+    depends_on:
+      - api
+    environment:
+      NEXT_DISABLE_TURBOPACK: "1"
+      WATCHPACK_POLLING: "true"
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NODE_ENV: development
+      PORT: 3000
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    command: npm run dev
+
+volumes:
+  dbdata:
